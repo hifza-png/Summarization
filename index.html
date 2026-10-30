@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Transformer Paper Summarizer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: infographic poster. Header, goal + pipeline, live demo, key point + cross-page attention. */
+:root{
+  --bg:#eef3fa; --panel:#e2ebf7; --card:#ffffff; --ink:#14203a; --muted:#52607a; --line:#cbd8ec;
+  --blue:#2f6fe4; --blue-t:#dce8fc; --amber:#d8940f; --amber-t:#fdf0cf; --rose:#d9485f; --rose-t:#fde0e4;
+  --green:#1f9d64; --green-t:#d6f2e4; --violet:#6a45d6; --violet-t:#e8e0fb;
+  --display:'Outfit','Trebuchet MS',system-ui,sans-serif; --body:'Source Sans 3','Segoe UI',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1626; --panel:#16223a; --card:#1b2944; --ink:#e8eefb; --muted:#9db0d1; --line:#2b3d62;
+  --blue:#6ea0ff; --blue-t:#1c2f57; --amber:#f2b947; --amber-t:#3a2f14; --rose:#ff7d92; --rose-t:#43202a;
+  --green:#4fd195; --green-t:#16382b; --violet:#a58cff; --violet-t:#2c2554; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1626; --panel:#16223a; --card:#1b2944; --ink:#e8eefb; --muted:#9db0d1; --line:#2b3d62;
+  --blue:#6ea0ff; --blue-t:#1c2f57; --amber:#f2b947; --amber-t:#3a2f14; --rose:#ff7d92; --rose-t:#43202a;
+  --green:#4fd195; --green-t:#16382b; --violet:#a58cff; --violet-t:#2c2554; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5;
+  padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1120px;margin:0 auto;display:grid;gap:16px}
+h1,h2,h3{font-family:var(--display);margin:0;line-height:1.15;text-wrap:balance}
+h1{font-size:clamp(26px,4.4vw,44px);font-weight:800;text-align:center;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--blue)}
+h2{font-size:clamp(22px,3vw,30px);font-weight:700}
+p{margin:0}
+.panel{background:var(--panel);border-radius:18px;padding:20px;min-width:0}
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.5fr);gap:16px}
+.lede{color:var(--muted);margin:8px 0 14px}
+.goal p{margin-top:10px;font-size:17px}
+.stack{margin-top:16px;display:flex;align-items:flex-end;gap:12px}
+.stack svg{width:92px;height:auto;flex:none}
+.pill{display:inline-block;background:var(--blue-t);color:var(--blue);font-family:var(--display);font-weight:700;border-radius:10px;padding:6px 12px;font-size:15px}
+/* pipeline */
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px}
+.step{border-radius:14px;padding:12px;position:relative;min-width:0;border:2px solid transparent;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.step:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.step[aria-pressed="true"]{border-color:currentColor}
+.step:not(:last-child)::after{content:"\2192";position:absolute;right:-19px;top:46%;font-size:20px;font-weight:700;color:var(--ink)}
+.s1{background:var(--blue-t);color:var(--blue)} .s2{background:var(--amber-t);color:var(--amber)}
+.s3{background:var(--rose-t);color:var(--rose)} .s4{background:var(--green-t);color:var(--green)}
+.step h3{display:flex;gap:8px;align-items:center;font-size:17px;color:var(--ink)}
+.num{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:currentColor;font-size:14px}
+.num b{color:var(--card);font-weight:700}
+.vis{margin:10px 0;min-height:128px;background:var(--card);border-radius:10px;padding:8px;display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start;overflow:hidden}
+.vis .ln{height:6px;border-radius:3px;background:var(--line);width:100%}
+.vis .ln.short{width:62%}
+.chip{font-family:var(--mono);font-size:11.5px;padding:3px 7px;border-radius:6px;background:var(--amber-t);color:var(--ink)}
+.layer{width:100%;text-align:center;font-size:12px;padding:6px 4px;border-radius:7px;background:var(--rose-t);color:var(--ink);line-height:1.25}
+.layer small{display:block;color:var(--muted);font-size:11px}
+.cap{font-size:14px;color:var(--ink)}
+.stat{display:block;margin-top:6px;font-family:var(--display);font-weight:700;color:currentColor;font-size:15px}
+.explain{margin-top:14px;background:var(--card);border-radius:12px;padding:12px 14px;font-size:15px;color:var(--ink)}
+/* demo */
+.demo{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;display:grid;gap:16px;min-width:0}
+.demo-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+label.l{font-family:var(--display);font-weight:600;font-size:14px;color:var(--muted);display:block;margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase}
+textarea{width:100%;min-height:260px;resize:vertical;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--bg);color:var(--ink);font:15px/1.55 var(--body)}
+textarea:focus-visible,input:focus-visible,button:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{font-family:var(--display);font-weight:600;font-size:14px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:10px;cursor:pointer}
+.btn:hover{background:var(--blue-t)}
+.btn.main{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.main:hover{filter:brightness(1.08);background:var(--blue)}
+input[type=range]{accent-color:var(--blue);width:150px}
+.out{background:var(--green-t);border-radius:12px;padding:14px;min-height:260px}
+.out p{font-size:16px;line-height:1.6}
+.out p+p{margin-top:8px}
+.src{border:1px solid var(--line);border-radius:12px;padding:14px;line-height:1.7;background:var(--bg);font-size:15px}
+.src mark{background:var(--green-t);color:var(--ink);border-radius:4px;padding:1px 2px;box-shadow:inset 0 -2px 0 var(--green)}
+.note{font-size:13.5px;color:var(--muted)}
+/* bottom */
+.bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:16px}
+.key{background:var(--violet-t)}
+.key h2{color:var(--violet);display:flex;gap:10px;align-items:center}
+.bulb{flex:none;width:40px;height:40px;border-radius:50%;background:var(--violet);display:grid;place-items:center}
+.key .big{margin-top:12px;background:var(--card);border-radius:12px;padding:14px;font-family:var(--display);font-weight:600;font-size:clamp(17px,2.2vw,22px);line-height:1.3}
+.rel{position:relative;margin-top:10px}
+.pages{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.pg{background:var(--card);border-radius:10px;padding:8px;border-top:4px solid var(--c);min-width:0}
+.pg b{font-family:var(--display);font-size:12.5px;color:var(--ink);display:block;margin-bottom:6px}
+.pg i{display:block;font-style:normal;font-size:11.5px;line-height:1.3;padding:3px 4px;margin-bottom:3px;border-radius:4px;background:var(--bg);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pg i.hit{background:var(--c);color:#fff;font-weight:600}
+.pg:nth-child(1){--c:var(--blue)} .pg:nth-child(2){--c:var(--amber)} .pg:nth-child(3){--c:var(--rose)} .pg:nth-child(4){--c:var(--green)}
+.pg:nth-child(2) i.hit,.pg:nth-child(4) i.hit{color:#1a1a1a}
+.concept{display:flex;justify-content:center;margin-top:46px}
+.concept span{background:var(--violet-t);color:var(--violet);border:1px solid var(--violet);border-radius:999px;padding:5px 16px;font-size:14px;font-weight:600}
+.rel svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.kw{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.kw button{font-family:var(--mono);font-size:13px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.kw button[aria-pressed="true"]{background:var(--violet);border-color:var(--violet);color:#fff}
+@media (max-width:860px){
+  .top,.bottom,.demo-grid{grid-template-columns:minmax(0,1fr)}
+  .steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .step:nth-child(2)::after{display:none}
+  .step:nth-child(1)::after{content:"\2192"}
+  .step:nth-child(3)::after{content:"\2192"}
+  .pages{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:480px){.steps{grid-template-columns:minmax(0,1fr)}.step::after{display:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <h1>Real-World Example: <em>Research Paper Summarization</em></h1>
+
+  <div class="top">
+    <section class="panel goal">
+      <h2>The Goal</h2>
+      <p>A university wants a system that can summarize a 20-page research paper. The model must find relationships between different passages, pull out the important information, and write a coherent summary.</p>
+      <div class="stack" aria-hidden="true">
+        <svg viewBox="0 0 92 110"><g fill="var(--card)" stroke="var(--line)" stroke-width="2"><rect x="4" y="6" width="64" height="86" rx="4"/><rect x="12" y="2" width="64" height="86" rx="4"/><rect x="20" y="12" width="64" height="86" rx="4"/></g><g fill="var(--line)"><rect x="30" y="38" width="44" height="5" rx="2"/><rect x="30" y="50" width="44" height="5" rx="2"/><rect x="30" y="62" width="34" height="5" rx="2"/></g><text x="30" y="30" font-size="9" font-weight="700" fill="var(--ink)" font-family="sans-serif">Research Paper</text></svg>
+        <span class="pill">20 pages</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>How It Works</h2>
+      <p class="lede">A Transformer represents contextual relationships well, as long as the text fits inside its supported context and the application is designed for it. Select a step to read more.</p>
+      <div class="steps" id="steps">
+        <button class="step s1" data-i="0" aria-pressed="true">
+          <h3><span class="num"><b>1</b></span>Input Text</h3>
+          <div class="vis" id="v1"></div>
+          <p class="cap">The full paper is given to the model as text.</p>
+          <span class="stat" id="st1"></span>
+        </button>
+        <button class="step s2" data-i="1" aria-pressed="false">
+          <h3><span class="num"><b>2</b></span>Tokens</h3>
+          <div class="vis" id="v2"></div>
+          <p class="cap">The text is split into a sequence of tokens (words or subwords).</p>
+          <span class="stat" id="st2"></span>
+        </button>
+        <button class="step s3" data-i="2" aria-pressed="false">
+          <h3><span class="num"><b>3</b></span>Transformer Layers</h3>
+          <div class="vis" id="v3"></div>
+          <p class="cap">Each layer mixes information between tokens with attention.</p>
+          <span class="stat" id="st3"></span>
+        </button>
+        <button class="step s4" data-i="3" aria-pressed="false">
+          <h3><span class="num"><b>4</b></span>Generated Summary</h3>
+          <div class="vis" id="v4"></div>
+          <p class="cap">The model writes a short summary of the key points.</p>
+          <span class="stat" id="st4"></span>
+        </button>
+      </div>
+      <div class="explain" id="explain" aria-live="polite"></div>
+    </section>
+  </div>
+
+  <section class="demo" aria-labelledby="dtitle">
+    <div>
+      <h2 id="dtitle">Try it on your own text</h2>
+      <p class="note" style="margin-top:4px">Paste a paper abstract or any long text. The four steps above update as you type.</p>
+    </div>
+    <div class="demo-grid">
+      <div>
+        <label class="l" for="src">Input text</label>
+        <textarea id="src" spellcheck="false"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="sample" type="button">Load sample paper</button>
+          <label class="btn" for="file" style="cursor:pointer">Upload PDF or .txt</label>
+          <input type="file" id="file" accept=".pdf,.txt,.md,application/pdf,text/plain" hidden>
+          <button class="btn" id="clear" type="button">Clear</button>
+        </div>
+      </div>
+      <div>
+        <label class="l" for="len">Generated summary <span id="mode" class="pill" style="font-size:12px;padding:2px 8px;text-transform:none;letter-spacing:0">Quick summary</span></label>
+        <div class="out" id="out" aria-live="polite"></div>
+        <div class="row" style="margin-top:10px">
+          <label for="len" class="note">Length</label>
+          <input type="range" id="len" min="1" max="5" value="3">
+          <span class="note" id="lenv"></span>
+          <button class="btn main" id="ai" type="button" hidden>Summarize with AI</button>
+          <button class="btn main" id="copy" type="button">Copy summary</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <label class="l">Where the summary came from</label>
+      <div class="src" id="srcview"></div>
+    </div>
+    <p class="note" id="status">This summarizer runs in your browser: it splits the text into tokens, scores the important words, and picks the sentences that carry the most weight. A real Transformer such as BART or Pegasus learns these relationships from data and writes new sentences instead of copying them.</p>
+  </section>
+
+  <div class="bottom">
+    <section class="panel key">
+      <h2><span class="bulb" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg></span>Key Point</h2>
+      <div class="big">Attention lets each token take in information from other relevant positions in the sequence.</div>
+    </section>
+    <section class="panel">
+      <h2>Passages Can Relate Across Pages</h2>
+      <p class="lede" style="margin-bottom:0">Attention lets a token in one part of the paper use information from passages on other pages, so the model builds one understanding of the whole document. Pick a concept from your text.</p>
+      <div class="kw" id="kw"></div>
+      <div class="rel" id="rel">
+        <div class="pages" id="pages"></div>
+        <svg id="lines" aria-hidden="true"></svg>
+        <div class="concept"><span id="concept">related concept</span></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script>
+const SAMPLE = "Sleep plays an important role in how the brain stores new information. In this study, 48 adult participants learned a set of word pairs and were then assigned to either a full night of sleep or a night of sleep deprivation. Memory for the word pairs was tested the next morning and again one week later. Participants who slept recalled about 20 percent more word pairs than those who stayed awake. Recordings of brain activity showed that sleep spindles, short bursts of activity during light sleep, were strongly linked to better recall. The number of spindles in the first hours of the night predicted how much each person remembered. These results support the idea that memory consolidation depends on activity that occurs during sleep. The authors suggest that spindles help move new memories from the hippocampus to the cortex, where they can be stored for the long term. The benefit of sleep was still visible after one week, which suggests the effect is lasting. A limitation of the study is that participants were young and healthy, so the findings may not apply to older adults. Future work should test whether boosting spindles with gentle stimulation can improve memory. In conclusion, sleep is not only rest but an active period in which memory consolidation takes place.";
+const STOP = new Set("a about above after again all also an and any are as at be because been before being below between both but by can could did do does doing down during each few for from further had has have having he her here hers him his how i if in into is it its itself just me more most my no nor not now of off on once only or other our out over own same she should so some such than that the their them then there these they this those through to too under until up very was we were what when where which while who whom why will with would you your were not only".split(" "));
+const $ = id => document.getElementById(id);
+const src = $('src');
+
+function sentences(t){ return (t.replace(/\s+/g,' ').trim().match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || []).map(s=>s.trim()).filter(Boolean); }
+function wordsOf(s){ return (s.toLowerCase().match(/[a-z][a-z'-]+/g) || []).filter(w=>!STOP.has(w) && w.length>2); }
+function tokenize(t){
+  const raw = t.match(/[A-Za-z]+(?:'[a-z]+)?|\d+|[^\sA-Za-z\d]/g) || [], out=[];
+  for(const w of raw){
+    if(/^[A-Za-z]+$/.test(w) && w.length>9){ out.push(w.slice(0,5)); for(let i=5;i<w.length;i+=4) out.push('##'+w.slice(i,i+4)); }
+    else out.push(w);
+  }
+  return out;
+}
+function summarize(sents,k){
+  const tf={}; sents.forEach(s=>wordsOf(s).forEach(w=>tf[w]=(tf[w]||0)+1));
+  const sc=sents.map((s,i)=>{const ws=wordsOf(s); if(!ws.length) return {i,v:0};
+    let v=ws.reduce((a,w)=>a+tf[w],0)/Math.sqrt(ws.length); if(i===0) v*=1.25; if(i===sents.length-1) v*=1.1; return {i,v};});
+  return sc.sort((a,b)=>b.v-a.v).slice(0,Math.min(k,sents.length)).map(x=>x.i).sort((a,b)=>a-b);
+}
+function esc(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+const EXPLAIN = [
+ "Step 1. The paper goes in as plain text. Models read a limited number of tokens at once (their context window), so a long paper may need to be split or shortened first.",
+ "Step 2. A tokenizer breaks the text into tokens, which are words or pieces of words. Long or rare words are split into smaller parts, shown here with ##.",
+ "Step 3. Each Transformer layer runs self-attention, where every token weighs every other token, and then a feed-forward network. Stacking layers lets the model build up meaning.",
+ "Step 4. The model writes the summary one token at a time, using what the layers learned about the whole paper."
+];
+let step=0;
+document.querySelectorAll('.step').forEach(b=>b.addEventListener('click',()=>{
+  step=+b.dataset.i; document.querySelectorAll('.step').forEach(x=>x.setAttribute('aria-pressed',x===b)); $('explain').textContent=EXPLAIN[step];
+}));
+
+let kwSel=null, aiText='';
+function showAI(t){ $('mode').textContent='Summary'; $('out').innerHTML=t.split(/\n+/).filter(x=>x.trim()).map(l=>'<p>'+esc(l.replace(/^[-*]\s+/,'\u2022 '))+'</p>').join(''); }
+function render(){
+  const t=src.value, sents=sentences(t), toks=tokenize(t), k=+$('len').value;
+  $('lenv').textContent=k+(k===1?' sentence':' sentences');
+  // step 1
+  $('v1').innerHTML=t.trim()?'<div class="ln"></div><div class="ln"></div><div class="ln short"></div><div class="ln"></div><div class="ln"></div><div class="ln short"></div><div class="ln"></div><div class="ln"></div>':'<span class="note">Add some text to begin.</span>';
+  $('st1').textContent=t.trim()?(t.trim().split(/\s+/).length+' words, '+sents.length+' sentences'):'';
+  // step 2
+  $('v2').innerHTML=toks.slice(0,24).map(x=>'<span class="chip">'+esc(x)+'</span>').join('')+(toks.length>24?'<span class="chip">…</span>':'');
+  $('st2').textContent=toks.length?toks.length+' tokens':'';
+  // step 3
+  $('v3').innerHTML='<div class="layer">Layer 1<small>Attention + Feed Forward</small></div><div class="layer">Layer 2<small>Attention + Feed Forward</small></div><div class="layer">…</div><div class="layer">Layer N<small>Attention + Feed Forward</small></div>';
+  $('st3').textContent=toks.length?(toks.length*toks.length).toLocaleString()+' attention pairs per layer':'';
+  // summary
+  const pick=summarize(sents,k), set=new Set(pick);
+  const sum=pick.map(i=>sents[i]);
+  if(aiText){ showAI(aiText); } else { $('mode').textContent='Quick summary'; $('out').innerHTML=sum.length?sum.map(s=>'<p>'+esc(s)+'</p>').join(''):'<p class="note">The summary appears here.</p>'; }
+  $('v4').innerHTML=sum.length?'<div class="ln"></div><div class="ln"></div><div class="ln short"></div><div class="ln"></div><div class="ln short"></div>':'';
+  $('st4').textContent=sum.length?(sum.join(' ').split(/\s+/).length+' words, from '+(t.trim().split(/\s+/).length)+''):'';
+  $('srcview').innerHTML=sents.length?sents.map((s,i)=>set.has(i)?'<mark>'+esc(s)+'</mark>':esc(s)).join(' '):'<span class="note">Your text appears here with the chosen sentences highlighted.</span>';
+  renderPages(sents);
+}
+
+function renderPages(sents){
+  const tf={}; sents.forEach(s=>wordsOf(s).forEach(w=>tf[w]=(tf[w]||0)+1));
+  const keys=Object.entries(tf).filter(e=>e[1]>=2).sort((a,b)=>b[1]-a[1]).slice(0,6).map(e=>e[0]);
+  if(!keys.includes(kwSel)) kwSel=keys[0]||null;
+  $('kw').innerHTML=keys.length?keys.map(w=>'<button type="button" aria-pressed="'+(w===kwSel)+'" data-w="'+w+'">'+esc(w)+'</button>').join(''):'<span class="note">Add more text to see concepts that repeat.</span>';
+  const labels=[1,5,12,20], n=sents.length, per=Math.max(1,Math.ceil(n/4)), hits=[false,false,false,false];
+  $('pages').innerHTML=[0,1,2,3].map(p=>{
+    const part=sents.slice(p*per,(p+1)*per).slice(0,4);
+    const items=part.map(s=>{const hit=kwSel&&wordsOf(s).includes(kwSel); if(hit) hits[p]=true; return '<i class="'+(hit?'hit':'')+'" title="'+esc(s)+'">'+esc(s)+'</i>';}).join('');
+    return '<div class="pg"><b>Page '+labels[p]+'</b>'+(items||'<i>–</i>')+'</div>';
+  }).join('');
+  $('concept').textContent=kwSel?'related concept: '+kwSel:'related concept';
+  drawLines(hits);
+}
+function drawLines(hits){
+  const rel=$('rel'), svg=$('lines'), r=rel.getBoundingClientRect(), tgt=$('concept').getBoundingClientRect();
+  const tx=tgt.left+tgt.width/2-r.left, ty=tgt.top-r.top;
+  const cols=['var(--blue)','var(--amber)','var(--rose)','var(--green)'];
+  let d='';
+  document.querySelectorAll('#pages .pg').forEach((pg,i)=>{
+    if(!hits[i]) return;
+    const b=pg.getBoundingClientRect(), x=b.left+b.width/2-r.left, y=b.bottom-r.top;
+    d+='<path d="M'+x+' '+y+' C '+x+' '+(y+34)+', '+tx+' '+(ty-34)+', '+tx+' '+(ty-2)+'" fill="none" stroke="'+cols[i]+'" stroke-width="2.2" stroke-linecap="round"/><circle cx="'+x+'" cy="'+y+'" r="3.5" fill="'+cols[i]+'"/>';
+  });
+  svg.innerHTML=d;
+}
+
+src.addEventListener('input',()=>{aiText='';render();});
+$('len').addEventListener('input',()=>{aiText='';render();});
+$('sample').addEventListener('click',()=>{src.value=SAMPLE;aiText='';render();});
+$('clear').addEventListener('click',()=>{src.value='';aiText='';render();src.focus();});
+$('kw').addEventListener('click',e=>{const b=e.target.closest('button'); if(b){kwSel=b.dataset.w;render();}});
+$('copy').addEventListener('click',async()=>{
+  const txt=[...document.querySelectorAll('#out p')].map(p=>p.textContent).join('\n');
+  const btn=$('copy'); try{ await navigator.clipboard.writeText(txt); btn.textContent='Copied'; }catch(e){ const r=document.createRange(); r.selectNodeContents($('out')); const s=getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent='Selected, press copy'; }
+  setTimeout(()=>btn.textContent='Copy summary',1600);
+});
+
+function setStatus(m){ $('status').textContent=m; }
+async function pdfText(file){
+  if(!window.pdfjsLib) throw new Error('pdf');
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise; let out='';
+  for(let i=1;i<=pdf.numPages;i++){ const c=await (await pdf.getPage(i)).getTextContent(); out+=c.items.map(x=>x.str).join(' ')+'\n'; }
+  return out.replace(/-\s+(?=[a-z])/g,'').replace(/[ \t]+/g,' ');
+}
+$('file').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return; setStatus('Reading '+f.name+'...');
+  try{
+    const t=/\.pdf$/i.test(f.name)||f.type==='application/pdf'?await pdfText(f):await f.text();
+    if(!t.trim()) throw new Error('empty');
+    src.value=t.trim(); aiText=''; render(); setStatus('Loaded '+f.name+'. Press "Summarize with AI" for a full summary, or adjust the length for the quick summary.');
+  }catch(err){ setStatus('Could not read that file (scanned PDFs have no text). Paste the text into the box instead.'); }
+  e.target.value='';
+});
+let sampleFn;
+$('ai').addEventListener('click',async()=>{
+  const t=src.value.trim(); if(!t){ setStatus('Add some text or upload a paper first.'); return; }
+  const btn=$('ai'); btn.disabled=true; btn.textContent='Summarizing...';
+  try{
+    sampleFn = sampleFn || await (window.claude&&window.claude.use?window.claude.use('sample'):null);
+    if(!sampleFn){ setStatus('AI summary is not available in this view, so the quick summary is shown. Open the page while signed in to Claude to use it.'); return; }
+    const n=+$('len').value*2;
+    const prompt='Summarize the following research paper text for a university student. Write one paragraph of about '+n+' sentences covering the goal, method, main results and conclusion. Then write the heading "Key points:" followed by 3 short bullet lines starting with "- ". Use plain text only, no markdown symbols other than the leading "- ". Base the summary only on the text.\n\nTEXT:\n'+t.slice(0,80000);
+    const r=await sampleFn(prompt,{cache:false,onText:x=>{aiText=x.text;showAI(aiText);}});
+    aiText=r.text; showAI(aiText); setStatus('AI summary written by Claude from your text. Editing the text or length returns to the quick summary.');
+  }catch(err){
+    aiText=''; render();
+    setStatus(err&&err.code==='not_granted'?'AI summary needs permission. Allow it when asked, then try again.':err&&err.code==='rate_limited'?'Too many requests. Wait a moment and try again.':'AI summary is not available right now, so the quick summary is shown.');
+  }finally{ btn.disabled=false; btn.textContent='Summarize with AI'; }
+});
+window.addEventListener('resize',()=>renderPages(sentences(src.value)));
+src.value=SAMPLE; $('explain').textContent=EXPLAIN[0]; render();
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>renderPages(sentences(src.value)));
+</script>
+
+</html>
